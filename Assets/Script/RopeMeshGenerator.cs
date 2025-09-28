@@ -8,16 +8,15 @@ using UnityEngine;
 public class RopeMeshGenerator : MonoBehaviour
 {
     #region 组件和变量
-
-    private MeshFilter filter;
-    private Mesh mesh;
-    private Vector3 startPos = new Vector3(0, 0, 0);
-
     public List<Vector3> meshVert;
     public List<int> meshTriangles;     // 三角形
     public List<Vector2> meshUV;
     public float Width = 1;
+    
+    private MeshFilter filter;
+    private Mesh mesh;
 
+    private Vector3 startPos = new Vector3(0, 0, 0);
     private float offset = 0;           // 保存上一段结尾的x偏移量，附加给这一段
     private bool needStart = true;      // 需要添加4个点。在初始或者 moveTo时
     [SerializeField]
@@ -89,7 +88,8 @@ public class RopeMeshGenerator : MonoBehaviour
         AddLineTriangles();
         
         // 步骤6：更新状态
-        UpdateLineState(endPos);
+        startPos = endPos;
+        needStart = false;
     }
 
     /// <summary>
@@ -178,17 +178,6 @@ public class RopeMeshGenerator : MonoBehaviour
         meshTriangles.Add(pointNum - 1);    // 左下
         meshTriangles.Add(pointNum - 4);    // 右上
         meshTriangles.Add(pointNum - 3);    // 左上
-    }
-
-    /// <summary>
-    /// 更新线段状态
-    /// 更新起始位置和状态标志，为下一次绘制做准备
-    /// </summary>
-    /// <param name="newStartPos">新的起始位置</param>
-    private void UpdateLineState(Vector3 newStartPos)
-    {
-        startPos = newStartPos;
-        needStart = false;
     }
 
     /// <summary>
