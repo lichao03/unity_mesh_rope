@@ -23,7 +23,7 @@ public class myColumn{
 public class ropeEnd : MonoBehaviour
 {
     // Start is called before the first frame update
-    public meshScript ms;
+    public RopeMeshGenerator ms;
     public Transform ropeStart;
     public float lineWidth =1;
     bool flag=false;

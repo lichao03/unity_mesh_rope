@@ -5,7 +5,7 @@ using UnityEngine;
 /// <summary>
 /// 网格生成脚本 - 负责生成绳子的顶点、三角形和UV数据
 /// </summary>
-public class meshScript : MonoBehaviour
+public class RopeMeshGenerator : MonoBehaviour
 {
     #region 组件和变量
 
