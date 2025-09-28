@@ -3,66 +3,67 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 网格生成脚本 - 负责生成绳子的顶点、三角形和UV数据
+/// 绳子网格生成器
+/// 负责根据路径生成动态的绳子网格，支持直线和弧线
 /// </summary>
 public class RopeMeshGenerator : MonoBehaviour
 {
-    #region 组件和变量
+    #region 公共字段
     public List<Vector3> meshVert;
-    public List<int> meshTriangles;     // 三角形
+    public List<int> meshTriangles;
     public List<Vector2> meshUV;
     public float Width = 1;
+    #endregion
     
-    private MeshFilter filter;
-    private Mesh mesh;
-
-    private Vector3 startPos = new Vector3(0, 0, 0);
-    private float offset = 0;           // 保存上一段结尾的x偏移量，附加给这一段
-    private bool needStart = true;      // 需要添加4个点。在初始或者 moveTo时
+    #region 私有字段
+    private MeshFilter meshFilter;
+    private Mesh generatedMesh;
+    private Vector3 currentStartPos = new Vector3(0, 0, 0);
+    private float uvOffset = 0;                     // UV偏移量，用于纹理滚动
+    private bool needStartPoint = true;             // 是否需要添加起始点
     [SerializeField]
-    private int pointNum = 0;           // 顶点总数。按照 sr，sl，er，el添加
-
+    private int totalVertexCount = 0;               // 顶点总数
     #endregion
 
     #region Unity生命周期
-
     void Start()
     {
-        filter = GetComponent<MeshFilter>();
-        mesh = new Mesh();
-        filter.mesh = mesh;
-        meshVert = new List<Vector3>{};
-        meshTriangles = new List<int>{};
-        meshUV = new List<Vector2>{};
+        InitializeMeshComponents();
     }
 
     void Update()
     {
     }
+    #endregion
 
+    #region 初始化
+    /// <summary>
+    /// 初始化网格组件和数据结构
+    /// </summary>
+    private void InitializeMeshComponents()
+    {
+        meshFilter = GetComponent<MeshFilter>();
+        generatedMesh = new Mesh();
+        meshFilter.mesh = generatedMesh;
+        meshVert = new List<Vector3>{};
+        meshTriangles = new List<int>{};
+        meshUV = new List<Vector2>{};
+    }
     #endregion
 
     #region 公共方法
-
     /// <summary>
-    /// 应用网格数据
+    /// 应用网格数据到网格对象
     /// </summary>
     public void stroke()
     {
-        mesh.name = "MyMesh";
-        mesh.Clear();
+        generatedMesh.name = "RopeMesh";
+        generatedMesh.Clear();
         
-        // 为网格创建顶点数组
-        Vector3[] vertices = meshVert.ToArray();
-        
-        // 通过顶点为网格创建三角形
-        int[] triangles = meshTriangles.ToArray();
-        
-        // 为mesh设置纹理贴图坐标
-        Vector2[] uv = meshUV.ToArray();
-        mesh.vertices = vertices;
-        mesh.triangles = triangles;
-        mesh.uv = uv;
+        // 将List数据转换为数组并赋值给网格
+        generatedMesh.vertices = meshVert.ToArray();
+        generatedMesh.triangles = meshTriangles.ToArray();
+        generatedMesh.uv = meshUV.ToArray();
     }
 
     /// <summary>
@@ -71,35 +72,79 @@ public class RopeMeshGenerator : MonoBehaviour
     public void lineTo(Vector3 endPos)
     {
         // 步骤1：计算线段基本信息
-        Vector3 sToEnd = endPos - startPos;
-        float length = Vector3.Distance(startPos, endPos);
+        Vector3 directionVector = endPos - currentStartPos;
+        float segmentLength = Vector3.Distance(currentStartPos, endPos);
         
         // 步骤2：计算垂直方向向量（用于确定线段宽度）
-        Vector3 left, Right;
-        CalculatePerpendicularVectors(sToEnd, out left, out Right);
+        Vector3 leftOffset, rightOffset;
+        CalculatePerpendicularVectors(directionVector, out leftOffset, out rightOffset);
         
         // 步骤3：添加起始点顶点
-        AddLineStartVertices(left, Right);
+        AddLineStartVertices(leftOffset, rightOffset);
         
         // 步骤4：添加终点顶点
-        AddLineEndVertices(endPos, left, Right, length);
+        AddLineEndVertices(endPos, leftOffset, rightOffset, segmentLength);
         
         // 步骤5：生成连接三角形
         AddLineTriangles();
         
         // 步骤6：更新状态
-        startPos = endPos;
-        needStart = false;
+        currentStartPos = endPos;
+        needStartPoint = false;
     }
 
     /// <summary>
+    /// 添加弧线路径
+    /// </summary>
+    public void circle(Vector3 circleCenter, float radius, float startAngle, float endAngle, bool clockwise = false)
+    {
+        // 步骤1：计算弧线长度
+        float arcLength = CalculateArcLength(startAngle, endAngle, radius, clockwise);
+        float initialOffset = uvOffset;
+        
+        // 步骤2：添加弧线起始点
+        AddArcStartPoint(circleCenter, radius, startAngle, clockwise);
+        
+        // 步骤3：生成弧线中间段
+        GenerateArcSegments(circleCenter, radius, startAngle, endAngle, arcLength, clockwise);
+        
+        // 步骤4：确保弧线终点精确
+        EnsureArcEndPoint(circleCenter, radius, endAngle, arcLength, initialOffset, clockwise);
+        
+        // 步骤5：更新偏移量和状态
+        uvOffset = (uvOffset * 5 % 5) / 5.0f;
+        needStartPoint = true;
+    }
+
+    /// <summary>
+    /// 移动到指定位置
+    /// </summary>
+    public void moveTo(Vector2 newPosition)
+    {
+        currentStartPos = newPosition;
+        needStartPoint = true;
+    }
+
+    /// <summary>
+    /// 清空所有数据
+    /// </summary>
+    public void clear()
+    {
+        meshVert.Clear();
+        meshTriangles.Clear();
+        meshUV.Clear();
+        needStartPoint = true;
+        currentStartPos = new Vector3(0, 0, 0);
+        totalVertexCount = 0;
+        uvOffset = 0;
+    }
+    #endregion
+
+    #region 直线绘制方法
+    /// <summary>
     /// 计算垂直方向向量
     /// 根据线段方向计算左右两个垂直向量，用于确定线段的宽度边界
-    /// 算法：将方向向量旋转90度得到垂直向量，然后标准化并按宽度缩放
     /// </summary>
-    /// <param name="direction">线段方向向量</param>
-    /// <param name="leftVector">输出左侧垂直向量</param>
-    /// <param name="rightVector">输出右侧垂直向量</param>
     private void CalculatePerpendicularVectors(Vector3 direction, out Vector3 leftVector, out Vector3 rightVector)
     {
         // 通过交换x,y分量并取负号来获得垂直向量
@@ -113,202 +158,144 @@ public class RopeMeshGenerator : MonoBehaviour
 
     /// <summary>
     /// 添加线段起始点顶点
-    /// 在线段起始位置添加左右两个顶点，形成线段的起始边界
-    /// 同时设置对应的UV坐标
     /// </summary>
-    /// <param name="leftOffset">左侧偏移向量</param>
-    /// <param name="rightOffset">右侧偏移向量</param>
     private void AddLineStartVertices(Vector3 leftOffset, Vector3 rightOffset)
     {
         // 初始添加4个点，后可只添加两个点
         if (true)
         {
-            meshVert.Add(startPos + rightOffset);
-            meshVert.Add(startPos + leftOffset);
-            pointNum += 2;
+            meshVert.Add(currentStartPos + rightOffset);
+            meshVert.Add(currentStartPos + leftOffset);
+            totalVertexCount += 2;
             
             // 添加UV坐标，使用当前偏移量
-            meshUV.Add(new Vector2(offset, 0));
-            meshUV.Add(new Vector2(offset, 1));
+            meshUV.Add(new Vector2(uvOffset, 0));
+            meshUV.Add(new Vector2(uvOffset, 1));
         }
     }
 
     /// <summary>
     /// 添加线段终点顶点
-    /// 在线段终点位置添加左右两个顶点，形成线段的结束边界
-    /// 根据线段长度计算新的UV偏移量，实现纹理的连续映射
     /// </summary>
-    /// <param name="endPosition">线段终点位置</param>
-    /// <param name="leftOffset">左侧偏移向量</param>
-    /// <param name="rightOffset">右侧偏移向量</param>
-    /// <param name="segmentLength">线段长度</param>
     private void AddLineEndVertices(Vector3 endPosition, Vector3 leftOffset, Vector3 rightOffset, float segmentLength)
     {
         meshVert.Add(endPosition + rightOffset);
         meshVert.Add(endPosition + leftOffset);
         
         // 计算新的UV偏移量，基于线段长度进行纹理映射
-        float newUVOffset = offset + segmentLength / 5;
+        float newUVOffset = uvOffset + segmentLength / 5;
         meshUV.Add(new Vector2(newUVOffset, 0));
         meshUV.Add(new Vector2(newUVOffset, 1));
         
         // 更新UV偏移量，使用模运算实现循环纹理
-        offset = ((offset * 5 + segmentLength) % 5) / 5.0f;
-        pointNum += 2;
+        uvOffset = ((uvOffset * 5 + segmentLength) % 5) / 5.0f;
+        totalVertexCount += 2;
     }
 
     /// <summary>
     /// 添加线段三角形
     /// 使用最新添加的4个顶点生成2个三角形，形成一个完整的线段四边形
-    /// 三角形顶点按照正确的绕序排列，确保面朝向正确
-    /// 
-    /// 顶点索引布局：
-    /// pointNum-4 (右上) ---- pointNum-2 (右下)
-    ///     |                      |
-    /// pointNum-3 (左上) ---- pointNum-1 (左下)
     /// </summary>
     private void AddLineTriangles()
     {
         // 第一个三角形：左下 -> 右下 -> 右上
-        meshTriangles.Add(pointNum - 1);    // 左下
-        meshTriangles.Add(pointNum - 2);    // 右下
-        meshTriangles.Add(pointNum - 4);    // 右上
+        meshTriangles.Add(totalVertexCount - 1);    // 左下
+        meshTriangles.Add(totalVertexCount - 2);    // 右下
+        meshTriangles.Add(totalVertexCount - 4);    // 右上
         
         // 第二个三角形：左下 -> 右上 -> 左上
-        meshTriangles.Add(pointNum - 1);    // 左下
-        meshTriangles.Add(pointNum - 4);    // 右上
-        meshTriangles.Add(pointNum - 3);    // 左上
+        meshTriangles.Add(totalVertexCount - 1);    // 左下
+        meshTriangles.Add(totalVertexCount - 4);    // 右上
+        meshTriangles.Add(totalVertexCount - 3);    // 左上
     }
+    #endregion
 
-    /// <summary>
-    /// 添加弧线路径
-    /// </summary>
-    /// <param name="circlePoint">圆心位置</param>
-    /// <param name="radius">弧线中点到圆心距离</param>
-    /// <param name="startRad">起始角，以弧度计。（弧的圆形的三点钟位置是 0 度）。</param>
-    /// <param name="endRad">结束角，以弧度计。三点钟为2pi</param>
-    /// <param name="clockwise">可选。规定应该逆时针还是顺时针绘图，默认false逆指针。False = 逆时针，true = 顺时针</param>
-    public void circle(Vector3 circlePoint, float radius, float startRad, float endRad, bool clockwise = false)
-    {
-        // 步骤1：计算弧线长度
-        float cirLength = CalculateArcLength(startRad, endRad, radius, clockwise);
-        float temOffset = offset;
-        
-        // 步骤2：添加弧线起始点
-        AddArcStartPoint(circlePoint, radius, startRad, clockwise);
-        
-        // 步骤3：生成弧线中间段
-        GenerateArcSegments(circlePoint, radius, startRad, endRad, cirLength, clockwise);
-        
-        // 步骤4：确保弧线终点精确
-        EnsureArcEndPoint(circlePoint, radius, endRad, cirLength, temOffset, clockwise);
-        
-        // 步骤5：更新偏移量和状态
-        offset = (offset * 5 % 5) / 5.0f;
-        needStart = true;
-    }
-
+    #region 弧线绘制方法
     /// <summary>
     /// 计算弧线长度
     /// 根据起始角度、结束角度、半径和绘制方向计算弧线的实际长度
     /// </summary>
-    /// <param name="startRad">起始角度（弧度）</param>
-    /// <param name="endRad">结束角度（弧度）</param>
-    /// <param name="radius">弧线半径</param>
-    /// <param name="clockwise">是否顺时针绘制</param>
-    /// <returns>弧线长度</returns>
-    private float CalculateArcLength(float startRad, float endRad, float radius, bool clockwise)
+    private float CalculateArcLength(float startAngle, float endAngle, float radius, bool clockwise)
     {
-        float cirLength = 0;
+        float arcLength = 0;
         
         if (clockwise) // 顺时针
         {
-            if (endRad > startRad)
+            if (endAngle > startAngle)
             {
-                cirLength = (startRad + 2 * Mathf.PI - endRad) * radius;
+                arcLength = (startAngle + 2 * Mathf.PI - endAngle) * radius;
             }
             else
             {
-                cirLength = (startRad - endRad) * radius;
+                arcLength = (startAngle - endAngle) * radius;
             }
         }
         else // 逆时针
         {
-            if (endRad > startRad)
+            if (endAngle > startAngle)
             {
-                cirLength = (endRad - startRad) * radius;
+                arcLength = (endAngle - startAngle) * radius;
             }
             else
             {
-                cirLength = (endRad + 2 * Mathf.PI - startRad) * radius;
-                Debug.LogError("cirLength:" + cirLength);
+                arcLength = (endAngle + 2 * Mathf.PI - startAngle) * radius;
+                Debug.LogError("arcLength:" + arcLength);
             }
         }
         
-        return cirLength;
+        return arcLength;
     }
 
     /// <summary>
     /// 添加弧线起始点
     /// 在弧线的起始角度位置添加一对顶点（内外侧各一个）
     /// </summary>
-    /// <param name="circlePoint">圆心位置</param>
-    /// <param name="radius">弧线半径</param>
-    /// <param name="startRad">起始角度</param>
-    /// <param name="clockwise">是否顺时针绘制</param>
-    private void AddArcStartPoint(Vector3 circlePoint, float radius, float startRad, bool clockwise)
+    private void AddArcStartPoint(Vector3 circleCenter, float radius, float startAngle, bool clockwise)
     {
-        float rad = startRad;
-        Vector3 temPoint = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0); // 临时的点
+        float currentAngle = startAngle;
+        Vector3 pointOnCircle = new Vector3(Mathf.Cos(currentAngle), Mathf.Sin(currentAngle), 0);
 
         if (clockwise)
         {
-            meshVert.Add(temPoint * (radius - Width / 2) + circlePoint);
-            meshVert.Add(temPoint * (radius + Width / 2) + circlePoint);
+            meshVert.Add(pointOnCircle * (radius - Width / 2) + circleCenter);
+            meshVert.Add(pointOnCircle * (radius + Width / 2) + circleCenter);
         }
         else
         {
-            meshVert.Add(temPoint * (radius + Width / 2) + circlePoint);
-            meshVert.Add(temPoint * (radius - Width / 2) + circlePoint);
+            meshVert.Add(pointOnCircle * (radius + Width / 2) + circleCenter);
+            meshVert.Add(pointOnCircle * (radius - Width / 2) + circleCenter);
         }
         
-        meshUV.Add(new Vector2(offset, 0));
-        meshUV.Add(new Vector2(offset, 1));
-        pointNum += 2;
+        meshUV.Add(new Vector2(uvOffset, 0));
+        meshUV.Add(new Vector2(uvOffset, 1));
+        totalVertexCount += 2;
     }
 
     /// <summary>
     /// 生成弧线中间段
     /// 在起始点和结束点之间生成中间的顶点和三角形
-    /// 每个步进生成一对顶点，并连接前一对顶点形成四边形（两个三角形）
     /// </summary>
-    /// <param name="circlePoint">圆心位置</param>
-    /// <param name="radius">弧线半径</param>
-    /// <param name="startRad">起始角度</param>
-    /// <param name="endRad">结束角度</param>
-    /// <param name="cirLength">弧线长度</param>
-    /// <param name="clockwise">是否顺时针绘制</param>
-    private void GenerateArcSegments(Vector3 circlePoint, float radius, float startRad, float endRad, float cirLength, bool clockwise)
+    private void GenerateArcSegments(Vector3 circleCenter, float radius, float startAngle, float endAngle, float arcLength, bool clockwise)
     {
-        float rad = startRad;
+        float currentAngle = startAngle;
         
-        for (int i = 0; i < cirLength - 1; i++)
+        for (int i = 0; i < arcLength - 1; i++)
         {
-            offset += 1 / 5.0f;
+            uvOffset += 1 / 5.0f;
             
             // 计算当前角度
             if (clockwise)
             {
-                rad -= Mathf.Abs((startRad - endRad)) / cirLength;
+                currentAngle -= Mathf.Abs((startAngle - endAngle)) / arcLength;
             }
             else
             {
-                rad += Mathf.Abs((startRad - endRad)) / cirLength;
+                currentAngle += Mathf.Abs((startAngle - endAngle)) / arcLength;
             }
 
             // 生成当前角度的顶点
-            Vector3 temPoint = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0);
-            AddArcVertexPair(temPoint, circlePoint, radius, clockwise);
+            Vector3 pointOnCircle = new Vector3(Mathf.Cos(currentAngle), Mathf.Sin(currentAngle), 0);
+            AddArcVertexPair(pointOnCircle, circleCenter, radius, clockwise);
             
             // 生成连接前一对顶点的三角形
             AddArcTriangles();
@@ -319,89 +306,53 @@ public class RopeMeshGenerator : MonoBehaviour
     /// 添加弧线顶点对
     /// 在指定位置添加内外两个顶点，并设置对应的UV坐标
     /// </summary>
-    /// <param name="pointOnCircle">圆周上的单位向量点</param>
-    /// <param name="circlePoint">圆心位置</param>
-    /// <param name="radius">弧线半径</param>
-    /// <param name="clockwise">是否顺时针绘制</param>
-    private void AddArcVertexPair(Vector3 pointOnCircle, Vector3 circlePoint, float radius, bool clockwise)
+    private void AddArcVertexPair(Vector3 pointOnCircle, Vector3 circleCenter, float radius, bool clockwise)
     {
         if (clockwise)
         {
-            meshVert.Add(pointOnCircle * (radius - Width / 2) + circlePoint);
-            meshVert.Add(pointOnCircle * (radius + Width / 2) + circlePoint);
+            meshVert.Add(pointOnCircle * (radius - Width / 2) + circleCenter);
+            meshVert.Add(pointOnCircle * (radius + Width / 2) + circleCenter);
         }
         else
         {
-            meshVert.Add(pointOnCircle * (radius + Width / 2) + circlePoint);
-            meshVert.Add(pointOnCircle * (radius - Width / 2) + circlePoint);
+            meshVert.Add(pointOnCircle * (radius + Width / 2) + circleCenter);
+            meshVert.Add(pointOnCircle * (radius - Width / 2) + circleCenter);
         }
         
-        meshUV.Add(new Vector2(offset, 0));
-        meshUV.Add(new Vector2(offset, 1));
-        pointNum += 2;
+        meshUV.Add(new Vector2(uvOffset, 0));
+        meshUV.Add(new Vector2(uvOffset, 1));
+        totalVertexCount += 2;
     }
 
     /// <summary>
     /// 添加弧线三角形
     /// 使用最新的4个顶点生成2个三角形，形成一个四边形段
-    /// 三角形顶点顺序确保正确的面朝向
     /// </summary>
     private void AddArcTriangles()
     {
-        meshTriangles.Add(pointNum - 1);
-        meshTriangles.Add(pointNum - 2);
-        meshTriangles.Add(pointNum - 4);
-        meshTriangles.Add(pointNum - 1);
-        meshTriangles.Add(pointNum - 4);
-        meshTriangles.Add(pointNum - 3);
+        meshTriangles.Add(totalVertexCount - 1);
+        meshTriangles.Add(totalVertexCount - 2);
+        meshTriangles.Add(totalVertexCount - 4);
+        meshTriangles.Add(totalVertexCount - 1);
+        meshTriangles.Add(totalVertexCount - 4);
+        meshTriangles.Add(totalVertexCount - 3);
     }
 
     /// <summary>
     /// 确保弧线终点精确
     /// 检查是否需要添加精确的终点，确保弧线结束在指定角度
-    /// 这是为了处理循环步进可能产生的精度误差
     /// </summary>
-    /// <param name="circlePoint">圆心位置</param>
-    /// <param name="radius">弧线半径</param>
-    /// <param name="endRad">结束角度</param>
-    /// <param name="cirLength">弧线长度</param>
-    /// <param name="temOffset">原始偏移量</param>
-    /// <param name="clockwise">是否顺时针绘制</param>
-    private void EnsureArcEndPoint(Vector3 circlePoint, float radius, float endRad, float cirLength, float temOffset, bool clockwise)
+    private void EnsureArcEndPoint(Vector3 circleCenter, float radius, float endAngle, float arcLength, float initialOffset, bool clockwise)
     {
-        if (offset != temOffset + cirLength / 5.0f)
+        if (uvOffset != initialOffset + arcLength / 5.0f)
         {
-            offset = temOffset + cirLength / 5.0f;
-            float rad = endRad;
-            Vector3 temPoint = new Vector3(Mathf.Cos(rad), Mathf.Sin(rad), 0);
+            uvOffset = initialOffset + arcLength / 5.0f;
+            float currentAngle = endAngle;
+            Vector3 pointOnCircle = new Vector3(Mathf.Cos(currentAngle), Mathf.Sin(currentAngle), 0);
             
-            AddArcVertexPair(temPoint, circlePoint, radius, clockwise);
+            AddArcVertexPair(pointOnCircle, circleCenter, radius, clockwise);
             AddArcTriangles();
         }
     }
-
-    /// <summary>
-    /// 移动到指定位置
-    /// </summary>
-    public void moveTo(Vector2 endPos)
-    {
-        startPos = endPos;
-        needStart = true;
-    }
-
-    /// <summary>
-    /// 清空所有数据
-    /// </summary>
-    public void clear()
-    {
-        meshVert.Clear();
-        meshTriangles.Clear();
-        meshUV.Clear();
-        needStart = true;
-        startPos = new Vector3(0, 0, 0);
-        pointNum = 0;
-        offset = 0;
-    }
-
     #endregion
 }
