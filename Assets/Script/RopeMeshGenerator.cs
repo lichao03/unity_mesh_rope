@@ -15,11 +15,19 @@ public class RopeMeshGenerator : MonoBehaviour
     public float Width = 1;
     #endregion
     
+    #region 常量定义
+    /// <summary>
+    /// 纹理缩放因子 - 控制纹理在绳子上的重复频率
+    /// 值越大，纹理越密集；值越小，纹理越稀疏
+    /// </summary>
+    private const float TEXTURE_SCALE_FACTOR = 5.0f;
+    #endregion
+    
     #region 私有字段
     private MeshFilter meshFilter;
     private Mesh generatedMesh;
     private Vector3 currentStartPos = new Vector3(0, 0, 0);
-    private float uvOffset = 0;                     // UV偏移量，用于纹理滚动
+    private float uvOffset { get; set; } = 0; // UV偏移量，用于纹理滚动
     private bool needStartPoint = true;             // 是否需要添加起始点
     [SerializeField]
     private int totalVertexCount = 0;               // 顶点总数
@@ -112,7 +120,7 @@ public class RopeMeshGenerator : MonoBehaviour
         EnsureArcEndPoint(circleCenter, radius, endAngle, arcLength, initialOffset, clockwise);
         
         // 步骤5：更新偏移量和状态
-        uvOffset = (uvOffset * 5 % 5) / 5.0f;
+        NormalizeUVOffset();
         needStartPoint = true;
     }
 
@@ -183,12 +191,12 @@ public class RopeMeshGenerator : MonoBehaviour
         meshVert.Add(endPosition + leftOffset);
         
         // 计算新的UV偏移量，基于线段长度进行纹理映射
-        float newUVOffset = uvOffset + segmentLength / 5;
+        float newUVOffset = uvOffset + segmentLength / TEXTURE_SCALE_FACTOR;
         meshUV.Add(new Vector2(newUVOffset, 0));
         meshUV.Add(new Vector2(newUVOffset, 1));
         
         // 更新UV偏移量，使用模运算实现循环纹理
-        uvOffset = ((uvOffset * 5 + segmentLength) % 5) / 5.0f;
+        UpdateUVOffset(segmentLength);
         totalVertexCount += 2;
     }
 
@@ -281,7 +289,7 @@ public class RopeMeshGenerator : MonoBehaviour
         
         for (int i = 0; i < arcLength - 1; i++)
         {
-            uvOffset += 1 / 5.0f;
+            uvOffset += 1 / TEXTURE_SCALE_FACTOR;
             
             // 计算当前角度
             if (clockwise)
@@ -344,15 +352,36 @@ public class RopeMeshGenerator : MonoBehaviour
     /// </summary>
     private void EnsureArcEndPoint(Vector3 circleCenter, float radius, float endAngle, float arcLength, float initialOffset, bool clockwise)
     {
-        if (uvOffset != initialOffset + arcLength / 5.0f)
+        if (!Mathf.Approximately(uvOffset, initialOffset + arcLength / TEXTURE_SCALE_FACTOR))
         {
-            uvOffset = initialOffset + arcLength / 5.0f;
+            uvOffset = initialOffset + arcLength / TEXTURE_SCALE_FACTOR;
             float currentAngle = endAngle;
             Vector3 pointOnCircle = new Vector3(Mathf.Cos(currentAngle), Mathf.Sin(currentAngle), 0);
             
             AddArcVertexPair(pointOnCircle, circleCenter, radius, clockwise);
             AddArcTriangles();
         }
+    }
+    #endregion
+
+    #region UV工具方法
+    /// <summary>
+    /// 更新UV偏移量（带循环）
+    /// 根据增加的长度更新 uvOffset，并使用模运算实现纹理循环
+    /// </summary>
+    /// <param name="deltaLength">增加的长度</param>
+    private void UpdateUVOffset(float deltaLength)
+    {
+        uvOffset = ((uvOffset * TEXTURE_SCALE_FACTOR + deltaLength) % TEXTURE_SCALE_FACTOR) / TEXTURE_SCALE_FACTOR;
+    }
+
+    /// <summary>
+    /// 归一化UV偏移量
+    /// 将当前 uvOffset 归一化到 [0, 1) 区间内
+    /// </summary>
+    private void NormalizeUVOffset()
+    {
+        uvOffset = (uvOffset * TEXTURE_SCALE_FACTOR % TEXTURE_SCALE_FACTOR) / TEXTURE_SCALE_FACTOR;
     }
     #endregion
 }
