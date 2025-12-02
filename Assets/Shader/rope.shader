@@ -3,8 +3,6 @@
     Properties
     {
         _MainTex ("Texture", 2D) = "white" {}
-        _LineLength ("length", float) = 30
-        _Offset("offset",range(0,1))=0
     }
     SubShader
     {
@@ -40,14 +38,9 @@
             }
 
             sampler2D _MainTex;
-            float _LineLength;
-            float _Offset;
             fixed4 frag (v2f i) : SV_Target
             {
-                float2 myuv=(i.uv.x,i.uv.y);
-                fixed4 col = tex2D(_MainTex,float2( (i.uv.x+_Offset)*_LineLength,i.uv.y));
-                // just invert the colors
-                col.rgb =col.rgb;
+                fixed4 col = tex2D(_MainTex,float2(i.uv.x,i.uv.y));
                 return col;
             }
             ENDCG
