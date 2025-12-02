@@ -120,7 +120,7 @@ public class RopeMeshGenerator : MonoBehaviour
         EnsureArcEndPoint(circleCenter, radius, endAngle, arcLength, initialOffset, clockwise);
         
         // 步骤5：更新偏移量和状态
-        NormalizeUVOffset();
+        uvOffset = NormalizeUVOffset(uvOffset);
         needStartPoint = true;
     }
 
@@ -190,13 +190,13 @@ public class RopeMeshGenerator : MonoBehaviour
         meshVert.Add(endPosition + rightOffset);
         meshVert.Add(endPosition + leftOffset);
         
-        // 计算新的UV偏移量，基于线段长度进行纹理映射
-        float newUVOffset = uvOffset + segmentLength / TEXTURE_SCALE_FACTOR;
+        // 计算新的UV偏移量，基于线段长度进行纹理映射，添加UV之前不能进行模运算
+        float newUVOffset = AddLength2UVOffset(uvOffset, segmentLength);
         meshUV.Add(new Vector2(newUVOffset, 0));
         meshUV.Add(new Vector2(newUVOffset, 1));
         
         // 更新UV偏移量，使用模运算实现循环纹理
-        UpdateUVOffset(segmentLength);
+        uvOffset = NormalizeUVOffset(newUVOffset);
         totalVertexCount += 2;
     }
 
@@ -289,7 +289,9 @@ public class RopeMeshGenerator : MonoBehaviour
         
         for (int i = 0; i < arcLength - 1; i++)
         {
-            uvOffset += 1 / TEXTURE_SCALE_FACTOR;
+            // 绘制弧形中间段时，每次增加一米
+            // 一米是根据实际情况设定的，可以根据需要调整
+            uvOffset = AddLength2UVOffset(uvOffset, 1.0f);
             
             // 计算当前角度
             if (clockwise)
@@ -352,9 +354,10 @@ public class RopeMeshGenerator : MonoBehaviour
     /// </summary>
     private void EnsureArcEndPoint(Vector3 circleCenter, float radius, float endAngle, float arcLength, float initialOffset, bool clockwise)
     {
-        if (!Mathf.Approximately(uvOffset, initialOffset + arcLength / TEXTURE_SCALE_FACTOR))
+        var newUVOffset = AddLength2UVOffset(initialOffset, arcLength);
+        if (!Mathf.Approximately(uvOffset, newUVOffset))
         {
-            uvOffset = initialOffset + arcLength / TEXTURE_SCALE_FACTOR;
+            uvOffset = newUVOffset;
             float currentAngle = endAngle;
             Vector3 pointOnCircle = new Vector3(Mathf.Cos(currentAngle), Mathf.Sin(currentAngle), 0);
             
@@ -365,23 +368,25 @@ public class RopeMeshGenerator : MonoBehaviour
     #endregion
 
     #region UV工具方法
+
     /// <summary>
-    /// 更新UV偏移量（带循环）
-    /// 根据增加的长度更新 uvOffset，并使用模运算实现纹理循环
+    /// 更新UV偏移量（不进行模运算），用于添加UV顶点前调用
+    /// 此时长度可能会大于1，同时图片的Warp模式为Repeat，这样可实现循环绘制
     /// </summary>
+    /// <param name="uvOffsetBefore"></param>
     /// <param name="deltaLength">增加的长度</param>
-    private void UpdateUVOffset(float deltaLength)
+    private static float AddLength2UVOffset(float uvOffsetBefore, float deltaLength)
     {
-        uvOffset = ((uvOffset * TEXTURE_SCALE_FACTOR + deltaLength) % TEXTURE_SCALE_FACTOR) / TEXTURE_SCALE_FACTOR;
+        return uvOffsetBefore + deltaLength / TEXTURE_SCALE_FACTOR;
     }
 
     /// <summary>
-    /// 归一化UV偏移量
+    /// 归一化UV偏移量, 在添加完UV顶点后调用,用于下一次计算
     /// 将当前 uvOffset 归一化到 [0, 1) 区间内
     /// </summary>
-    private void NormalizeUVOffset()
+    private static float NormalizeUVOffset(float uvOffsetBefore)
     {
-        uvOffset = (uvOffset * TEXTURE_SCALE_FACTOR % TEXTURE_SCALE_FACTOR) / TEXTURE_SCALE_FACTOR;
+        return uvOffsetBefore % 1.0f;
     }
     #endregion
 }

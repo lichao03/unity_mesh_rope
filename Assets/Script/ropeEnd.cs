@@ -349,6 +349,7 @@ public class ropeEnd : MonoBehaviour
     private void RenderColumnArc(myColumn column)
     {
         float wrapAngle = column.rad;
+        // 为什么除以10，因为柱子的localScale.x = 10时，柱子的半径恰好是一个单位
         float renderRadius = column.column.transform.localScale.x / 10 + this.lineWidth / 2;
         
         if (Mathf.Abs(wrapAngle) >= Math.PI * 2)
